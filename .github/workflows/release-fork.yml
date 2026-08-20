@@ -28,7 +28,7 @@ jobs:
 
       - name: Test the fork patch
         run: |
-          go test ./third_party/go-unifi/unifi/ -run TestNativeNetworkID -v
+          (cd third_party/go-unifi && go test ./unifi/ -run TestNativeNetworkID -v)
           go build ./unifi/...
 
       - name: Build + package
