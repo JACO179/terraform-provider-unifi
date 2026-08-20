@@ -189,6 +189,13 @@ type portOverrideModel struct {
 	StormctrlUcastEnabled      types.Bool           `tfsdk:"stormctrl_ucast_enabled"`
 	StormctrlUcastLevel        types.Int64          `tfsdk:"stormctrl_ucast_level"`
 	StormctrlUcastRate         types.Int64          `tfsdk:"stormctrl_ucast_rate"`
+	EeeEnabled                 types.Bool           `tfsdk:"eee_enabled"`
+	LinkDebounceAuto           types.Bool           `tfsdk:"link_debounce_auto"`
+	MulticastRouterMode        types.String         `tfsdk:"multicast_router_mode"`
+	SdWanUnderlayPort          types.Bool           `tfsdk:"sd_wan_underlay_port"`
+	StpBpduGuardEnabled        types.Bool           `tfsdk:"stp_bpdu_guard_enabled"`
+	StpEdgeState               types.String         `tfsdk:"stp_edge_state"`
+	StpUplink                  types.Bool           `tfsdk:"stp_uplink"`
 	StpPortMode                types.Bool           `tfsdk:"stp_port_mode"`
 	TaggedNetworkIDs           types.List           `tfsdk:"tagged_networkconf_ids"`
 	TaggedVLANMgmt             types.String         `tfsdk:"tagged_vlan_mgmt"`
@@ -942,6 +949,41 @@ func (r *deviceResource) Schema(
 							Description: "Unicast storm control rate.",
 							Optional:    true,
 						},
+						"eee_enabled": schema.BoolAttribute{
+							Description: "Enable Energy Efficient Ethernet (jfb fork).",
+							Optional:    true,
+							Computed:    true,
+						},
+						"link_debounce_auto": schema.BoolAttribute{
+							Description: "Automatic link debounce (jfb fork).",
+							Optional:    true,
+							Computed:    true,
+						},
+						"multicast_router_mode": schema.StringAttribute{
+							Description: "Multicast router mode (jfb fork).",
+							Optional:    true,
+							Computed:    true,
+						},
+						"sd_wan_underlay_port": schema.BoolAttribute{
+							Description: "SD-WAN underlay port (jfb fork).",
+							Optional:    true,
+							Computed:    true,
+						},
+						"stp_bpdu_guard_enabled": schema.BoolAttribute{
+							Description: "STP BPDU guard (jfb fork).",
+							Optional:    true,
+							Computed:    true,
+						},
+						"stp_edge_state": schema.StringAttribute{
+							Description: "STP edge port state (jfb fork).",
+							Optional:    true,
+							Computed:    true,
+						},
+						"stp_uplink": schema.BoolAttribute{
+							Description: "STP uplink designation (jfb fork).",
+							Optional:    true,
+							Computed:    true,
+						},
 						"stp_port_mode": schema.BoolAttribute{
 							Description: "STP port mode.",
 							Optional:    true,
@@ -1378,6 +1420,10 @@ func (r *deviceResource) Update(
 	// Save planned port overrides for post-update restore
 	plannedPortOverride := plan.PortOverride
 
+	// jfb fork: same for radios — user-configured radio values must survive the
+	// post-update re-read (framework consistency), with unknowns null-filled.
+	plannedRadioTable := plan.RadioTable
+
 	// Save planned LED overrides too. The controller applies these to APs
 	// asynchronously, so the immediate post-update read can still report the old
 	// values, which would conflict with the plan (#337). Re-assert the planned
@@ -1419,6 +1465,11 @@ func (r *deviceResource) Update(
 		}
 	} else {
 		plan.PortOverride = plannedPortOverride
+	}
+
+	// jfb fork: restore user-configured radios (null-filled) over the re-read
+	if !plannedRadioTable.IsNull() && !plannedRadioTable.IsUnknown() {
+		plan.RadioTable = fillUnknownsInObjectList(ctx, plannedRadioTable)
 	}
 
 	// Re-assert the planned LED values when the user configured them, so an
@@ -2250,6 +2301,51 @@ func (r *deviceResource) reconcilePortOverrides(
 	return setValue, diags
 }
 
+// fillUnknownsInObjectList returns the list with every unknown attribute of
+// each object element replaced by a typed null (known value that matches null
+// config on the next plan). jfb fork addition, used for radio_table.
+func fillUnknownsInObjectList(ctx context.Context, list types.List) types.List {
+	elems := list.Elements()
+	out := make([]attr.Value, 0, len(elems))
+	changed := false
+	for _, e := range elems {
+		obj, ok := e.(types.Object)
+		if !ok {
+			out = append(out, e)
+			continue
+		}
+		attrs := obj.Attributes()
+		attrTypes := obj.AttributeTypes(ctx)
+		merged := make(map[string]attr.Value, len(attrs))
+		for k, v := range attrs {
+			if v.IsUnknown() {
+				if at, okT := attrTypes[k]; okT {
+					if nullVal, err := at.ValueFromTerraform(ctx, tftypes.NewValue(at.TerraformType(ctx), nil)); err == nil {
+						merged[k] = nullVal
+						changed = true
+						continue
+					}
+				}
+			}
+			merged[k] = v
+		}
+		mObj, d := types.ObjectValue(attrTypes, merged)
+		if d.HasError() {
+			out = append(out, e)
+			continue
+		}
+		out = append(out, mObj)
+	}
+	if !changed {
+		return list
+	}
+	newList, d := types.ListValue(list.ElementType(ctx), out)
+	if d.HasError() {
+		return list
+	}
+	return newList
+}
+
 // fillUnknownPortOverrides returns the planned port_override set with any
 // unknown attribute values replaced by the controller's values for the same
 // port. Known planned values are preserved verbatim (framework consistency:
@@ -2418,6 +2514,15 @@ func (r *deviceResource) portOverridesToFramework(
 		model.StormctrlBroadcastEnabled = types.BoolValue(po.StormctrlBroadcastastEnabled)
 		model.StormctrlMcastEnabled = types.BoolValue(po.StormctrlMcastEnabled)
 		model.StormctrlUcastEnabled = types.BoolValue(po.StormctrlUcastEnabled)
+
+		// jfb fork: pointer-typed newer console fields (nil -> null)
+		if po.EeeEnabled == nil { model.EeeEnabled = types.BoolNull() } else { model.EeeEnabled = types.BoolValue(*po.EeeEnabled) }
+		if po.LinkDebounceAuto == nil { model.LinkDebounceAuto = types.BoolNull() } else { model.LinkDebounceAuto = types.BoolValue(*po.LinkDebounceAuto) }
+		if po.MulticastRouterMode == nil { model.MulticastRouterMode = types.StringNull() } else { model.MulticastRouterMode = types.StringValue(*po.MulticastRouterMode) }
+		if po.SdWanUnderlayPort == nil { model.SdWanUnderlayPort = types.BoolNull() } else { model.SdWanUnderlayPort = types.BoolValue(*po.SdWanUnderlayPort) }
+		if po.StpBpduGuardEnabled == nil { model.StpBpduGuardEnabled = types.BoolNull() } else { model.StpBpduGuardEnabled = types.BoolValue(*po.StpBpduGuardEnabled) }
+		if po.StpEdgeState == nil { model.StpEdgeState = types.StringNull() } else { model.StpEdgeState = types.StringValue(*po.StpEdgeState) }
+		if po.StpUplink == nil { model.StpUplink = types.BoolNull() } else { model.StpUplink = types.BoolValue(*po.StpUplink) }
 		model.StpPortMode = types.BoolValue(po.StpPortMode)
 
 		// Int64 attributes
@@ -2622,6 +2727,15 @@ func (r *deviceResource) frameworkToPortOverrides(
 			po.StormctrlMcastEnabled = model.StormctrlMcastEnabled.ValueBool()
 			po.StormctrlUcastEnabled = model.StormctrlUcastEnabled.ValueBool()
 			po.StpPortMode = model.StpPortMode.ValueBool()
+
+			// jfb fork: pointer-typed newer console fields — sent only when configured
+			if !model.EeeEnabled.IsNull() { v := model.EeeEnabled.ValueBool(); po.EeeEnabled = &v }
+			if !model.LinkDebounceAuto.IsNull() { v := model.LinkDebounceAuto.ValueBool(); po.LinkDebounceAuto = &v }
+			if !model.MulticastRouterMode.IsNull() { v := model.MulticastRouterMode.ValueString(); po.MulticastRouterMode = &v }
+			if !model.SdWanUnderlayPort.IsNull() { v := model.SdWanUnderlayPort.ValueBool(); po.SdWanUnderlayPort = &v }
+			if !model.StpBpduGuardEnabled.IsNull() { v := model.StpBpduGuardEnabled.ValueBool(); po.StpBpduGuardEnabled = &v }
+			if !model.StpEdgeState.IsNull() { v := model.StpEdgeState.ValueString(); po.StpEdgeState = &v }
+			if !model.StpUplink.IsNull() { v := model.StpUplink.ValueBool(); po.StpUplink = &v }
 
 			// Int64 attributes
 			if !model.Dot1XIDleTimeout.IsNull() {
@@ -2828,6 +2942,13 @@ func portOverrideAttrTypes() map[string]attr.Type {
 		"stormctrl_mcast_rate":             types.Int64Type,
 		"stormctrl_type":                   types.StringType,
 		"stormctrl_ucast_enabled":          types.BoolType,
+		"eee_enabled":                      types.BoolType,
+		"link_debounce_auto":               types.BoolType,
+		"multicast_router_mode":            types.StringType,
+		"sd_wan_underlay_port":             types.BoolType,
+		"stp_bpdu_guard_enabled":           types.BoolType,
+		"stp_edge_state":                   types.StringType,
+		"stp_uplink":                       types.BoolType,
 		"stormctrl_ucast_level":            types.Int64Type,
 		"stormctrl_ucast_rate":             types.Int64Type,
 		"stp_port_mode":                    types.BoolType,

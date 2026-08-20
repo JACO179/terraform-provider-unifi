@@ -830,7 +830,8 @@ func (r *portProfileResource) modelToAPIPortProfile(
 	portProfile.Speed = model.Speed.ValueInt64Pointer()
 
 	if !model.NativeNetworkConfID.IsNull() {
-		portProfile.NATiveNetworkID = model.NativeNetworkConfID.ValueString()
+		v := model.NativeNetworkConfID.ValueString()
+		portProfile.NATiveNetworkID = &v
 	}
 	if !model.VoiceNetworkConfID.IsNull() {
 		portProfile.VoiceNetworkID = model.VoiceNetworkConfID.ValueString()
@@ -931,8 +932,8 @@ func (r *portProfileResource) portProfileToModel(
 		model.LLDPMedNotifyEnabled = types.BoolNull()
 	}
 
-	if portProfile.NATiveNetworkID != "" {
-		model.NativeNetworkConfID = types.StringValue(portProfile.NATiveNetworkID)
+	if portProfile.NATiveNetworkID != nil && *portProfile.NATiveNetworkID != "" {
+		model.NativeNetworkConfID = types.StringValue(*portProfile.NATiveNetworkID)
 	} else {
 		model.NativeNetworkConfID = types.StringNull()
 	}

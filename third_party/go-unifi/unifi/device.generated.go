@@ -466,6 +466,13 @@ type DevicePortOverrides struct {
 	MirrorPortIDX                *int64            `json:"mirror_port_idx,omitempty"` // [1-9]|[1-4][0-9]|5[0-6]
 	MulticastRouterNetworkIDs    []string          `json:"multicast_router_networkconf_ids,omitempty"`
 	NATiveNetworkID              *string           `json:"native_networkconf_id,omitempty"` // jfb fork: pointer so &"" serializes as explicit "no native VLAN"
+	EeeEnabled                   *bool             `json:"eee_enabled,omitempty"`             // jfb fork: newer console field, absent from spec
+	LinkDebounceAuto             *bool             `json:"link_debounce_auto,omitempty"`      // jfb fork
+	MulticastRouterMode          *string           `json:"multicast_router_mode,omitempty"`   // jfb fork
+	SdWanUnderlayPort            *bool             `json:"sd_wan_underlay_port,omitempty"`    // jfb fork
+	StpBpduGuardEnabled          *bool             `json:"stp_bpdu_guard_enabled,omitempty"`  // jfb fork
+	StpEdgeState                 *string           `json:"stp_edge_state,omitempty"`          // jfb fork
+	StpUplink                    *bool             `json:"stp_uplink,omitempty"`              // jfb fork
 	Name                         string            `json:"name,omitempty"`     // .{0,128}
 	OpMode                       string            `json:"op_mode,omitempty"`  // switch|mirror|aggregate
 	PoeMode                      string            `json:"poe_mode,omitempty"` // auto|pasv24|passthrough|off

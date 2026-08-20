@@ -167,8 +167,8 @@ func (d *portProfileDataSource) Read(
 		data.Forward = types.StringValue(portProfile.Forward)
 	}
 
-	if portProfile.NATiveNetworkID != "" {
-		data.NativeNetworkconfID = types.StringValue(portProfile.NATiveNetworkID)
+	if portProfile.NATiveNetworkID != nil && *portProfile.NATiveNetworkID != "" {
+		data.NativeNetworkconfID = types.StringValue(*portProfile.NATiveNetworkID)
 	} else {
 		data.NativeNetworkconfID = types.StringNull()
 	}
