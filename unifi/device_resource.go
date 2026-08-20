@@ -1405,8 +1405,20 @@ func (r *deviceResource) Update(
 		}
 	}
 
-	// Restore port_override from plan (API returns all ports, plan has subset)
-	plan.PortOverride = plannedPortOverride
+	// Restore port_override from plan (API returns all ports, plan has subset).
+	// jfb fork: the raw plan may carry unknown Optional+Computed attrs, which
+	// the framework rejects after apply — reconcile against the fresh device so
+	// unknowns are backfilled with the controller's values.
+	if freshDevice != nil && !plannedPortOverride.IsNull() && !plannedPortOverride.IsUnknown() {
+		reconciled, recDiags := r.reconcilePortOverrides(ctx, plannedPortOverride, freshDevice.PortOverrides)
+		if recDiags.HasError() {
+			plan.PortOverride = plannedPortOverride
+		} else {
+			plan.PortOverride = reconciled
+		}
+	} else {
+		plan.PortOverride = plannedPortOverride
+	}
 
 	// Re-assert the planned LED values when the user configured them, so an
 	// asynchronously-applied controller value doesn't trip the consistency
