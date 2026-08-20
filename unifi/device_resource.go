@@ -2188,6 +2188,37 @@ func (r *deviceResource) reconcilePortOverrides(
 
 		objVal, objDiags := types.ObjectValueFrom(ctx, updated.AttributeTypes(), updated)
 		diags.Append(objDiags...)
+
+		// jfb fork: the plan leaves every non-configured Optional+Computed attr
+		// unknown, and the framework requires fully-known values after apply.
+		// Backfill remaining unknowns from the API response for this port.
+		fullSet, fullDiags := r.portOverridesToFramework(ctx, []unifi.DevicePortOverrides{apiPO})
+		if !fullDiags.HasError() {
+			var fullModels []portOverrideModel
+			convDiags := fullSet.ElementsAs(ctx, &fullModels, false)
+			if !convDiags.HasError() && len(fullModels) == 1 {
+				fullObj, fObjDiags := types.ObjectValueFrom(ctx, fullModels[0].AttributeTypes(), fullModels[0])
+				if !fObjDiags.HasError() {
+					attrs := objVal.Attributes()
+					fullAttrs := fullObj.Attributes()
+					mergedAttrs := make(map[string]attr.Value, len(attrs))
+					for k, v := range attrs {
+						if v.IsUnknown() {
+							if fv, ok := fullAttrs[k]; ok {
+								mergedAttrs[k] = fv
+								continue
+							}
+						}
+						mergedAttrs[k] = v
+					}
+					mergedObj, mDiags := types.ObjectValue(objVal.AttributeTypes(ctx), mergedAttrs)
+					if !mDiags.HasError() {
+						objVal = mergedObj
+					}
+				}
+			}
+		}
+
 		elements = append(elements, objVal)
 	}
 
