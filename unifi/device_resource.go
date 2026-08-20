@@ -14,6 +14,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/hashicorp/terraform-plugin-go/tftypes"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/list"
 	listschema "github.com/hashicorp/terraform-plugin-framework/list/schema"
@@ -2277,25 +2278,27 @@ func (r *deviceResource) fillUnknownPortOverrides(
 		}
 		// Fill unknowns with typed NULLs (not controller values): null is a
 		// known value, it matches the user's null config on the next plan (no
-		// set churn), and known planned values stay untouched.
-		zeroObj, zDiags := types.ObjectValueFrom(ctx, pm.AttributeTypes(), portOverrideModel{})
-		if !zDiags.HasError() {
-			attrs := objVal.Attributes()
-			nullAttrs := zeroObj.Attributes()
-			mergedAttrs := make(map[string]attr.Value, len(attrs))
-			for k, v := range attrs {
-				if v.IsUnknown() {
-					if nv, ok := nullAttrs[k]; ok {
-						mergedAttrs[k] = nv
+		// set churn), and known planned values stay untouched. Typed nulls are
+		// built from the attribute types (a zero model has typeless lists and
+		// cannot be converted).
+		attrs := objVal.Attributes()
+		attrTypes := objVal.AttributeTypes(ctx)
+		mergedAttrs := make(map[string]attr.Value, len(attrs))
+		for k, v := range attrs {
+			if v.IsUnknown() {
+				if at, ok := attrTypes[k]; ok {
+					nullVal, nErr := at.ValueFromTerraform(ctx, tftypes.NewValue(at.TerraformType(ctx), nil))
+					if nErr == nil {
+						mergedAttrs[k] = nullVal
 						continue
 					}
 				}
-				mergedAttrs[k] = v
 			}
-			mergedObj, mDiags := types.ObjectValue(objVal.AttributeTypes(ctx), mergedAttrs)
-			if !mDiags.HasError() {
-				objVal = mergedObj
-			}
+			mergedAttrs[k] = v
+		}
+		mergedObj, mDiags := types.ObjectValue(attrTypes, mergedAttrs)
+		if !mDiags.HasError() {
+			objVal = mergedObj
 		}
 		elements = append(elements, objVal)
 	}
