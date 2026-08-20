@@ -2260,13 +2260,7 @@ func (r *deviceResource) fillUnknownPortOverrides(
 	apiOverrides []unifi.DevicePortOverrides,
 ) (types.Set, diag.Diagnostics) {
 	var diags diag.Diagnostics
-
-	apiByIndex := make(map[int64]unifi.DevicePortOverrides, len(apiOverrides))
-	for _, po := range apiOverrides {
-		if po.PortIDX != nil {
-			apiByIndex[*po.PortIDX] = po
-		}
-	}
+	_ = apiOverrides // retained in the signature; nulls are used for unknowns
 
 	var plannedModels []portOverrideModel
 	diags.Append(planned.ElementsAs(ctx, &plannedModels, false)...)
@@ -2281,32 +2275,26 @@ func (r *deviceResource) fillUnknownPortOverrides(
 		if objDiags.HasError() {
 			return planned, diags
 		}
-		if apiPO, found := apiByIndex[pm.Index.ValueInt64()]; found {
-			fullSet, fullDiags := r.portOverridesToFramework(ctx, []unifi.DevicePortOverrides{apiPO})
-			if !fullDiags.HasError() {
-				var fullModels []portOverrideModel
-				convDiags := fullSet.ElementsAs(ctx, &fullModels, false)
-				if !convDiags.HasError() && len(fullModels) == 1 {
-					fullObj, fObjDiags := types.ObjectValueFrom(ctx, fullModels[0].AttributeTypes(), fullModels[0])
-					if !fObjDiags.HasError() {
-						attrs := objVal.Attributes()
-						fullAttrs := fullObj.Attributes()
-						mergedAttrs := make(map[string]attr.Value, len(attrs))
-						for k, v := range attrs {
-							if v.IsUnknown() {
-								if fv, ok := fullAttrs[k]; ok {
-									mergedAttrs[k] = fv
-									continue
-								}
-							}
-							mergedAttrs[k] = v
-						}
-						mergedObj, mDiags := types.ObjectValue(objVal.AttributeTypes(ctx), mergedAttrs)
-						if !mDiags.HasError() {
-							objVal = mergedObj
-						}
+		// Fill unknowns with typed NULLs (not controller values): null is a
+		// known value, it matches the user's null config on the next plan (no
+		// set churn), and known planned values stay untouched.
+		zeroObj, zDiags := types.ObjectValueFrom(ctx, pm.AttributeTypes(), portOverrideModel{})
+		if !zDiags.HasError() {
+			attrs := objVal.Attributes()
+			nullAttrs := zeroObj.Attributes()
+			mergedAttrs := make(map[string]attr.Value, len(attrs))
+			for k, v := range attrs {
+				if v.IsUnknown() {
+					if nv, ok := nullAttrs[k]; ok {
+						mergedAttrs[k] = nv
+						continue
 					}
 				}
+				mergedAttrs[k] = v
+			}
+			mergedObj, mDiags := types.ObjectValue(objVal.AttributeTypes(ctx), mergedAttrs)
+			if !mDiags.HasError() {
+				objVal = mergedObj
 			}
 		}
 		elements = append(elements, objVal)
