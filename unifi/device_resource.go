@@ -2140,10 +2140,10 @@ func (r *deviceResource) reconcilePortOverrides(
 			}
 		}
 		if !pm.NativeNetworkID.IsNull() {
-			if apiPO.NATiveNetworkID == "" {
+			if apiPO.NATiveNetworkID == nil {
 				updated.NativeNetworkID = types.StringNull()
 			} else {
-				updated.NativeNetworkID = types.StringValue(apiPO.NATiveNetworkID)
+				updated.NativeNetworkID = types.StringValue(*apiPO.NATiveNetworkID)
 			}
 		}
 		if !pm.Forward.IsNull() {
@@ -2267,10 +2267,10 @@ func (r *deviceResource) portOverridesToFramework(
 			model.Forward = types.StringValue(po.Forward)
 		}
 
-		if po.NATiveNetworkID == "" {
+		if po.NATiveNetworkID == nil {
 			model.NativeNetworkID = types.StringNull()
 		} else {
-			model.NativeNetworkID = types.StringValue(po.NATiveNetworkID)
+			model.NativeNetworkID = types.StringValue(*po.NATiveNetworkID)
 		}
 
 		if po.SettingPreference == "" {
@@ -2484,7 +2484,8 @@ func (r *deviceResource) frameworkToPortOverrides(
 				po.Forward = model.Forward.ValueString()
 			}
 			if !model.NativeNetworkID.IsNull() {
-				po.NATiveNetworkID = model.NativeNetworkID.ValueString()
+				v := model.NativeNetworkID.ValueString()
+				po.NATiveNetworkID = &v // jfb fork: "" is sent explicitly (no native VLAN)
 			}
 			if !model.SettingPreference.IsNull() {
 				po.SettingPreference = model.SettingPreference.ValueString()

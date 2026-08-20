@@ -1,0 +1,53 @@
+# jfb fork: build + release the patched provider on tag push (v*-jfb.*).
+# Tests the native-VLAN marshal fix, tidies modules, builds linux_amd64 +
+# darwin_arm64, and attaches zips + SHA256SUMS to a GitHub release for the
+# homelab repo's filesystem mirror.
+name: release-fork
+
+on:
+  push:
+    tags: ["v*-jfb.*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.8"
+          cache: true
+
+      - name: Tidy (fail if go.mod/go.sum need committing)
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum || { echo "::error::commit the tidy diff"; git diff go.mod go.sum; exit 1; }
+
+      - name: Test the fork patch
+        run: |
+          go test ./third_party/go-unifi/unifi/ -run TestNativeNetworkID -v
+          go build ./unifi/...
+
+      - name: Build + package
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          mkdir -p dist
+          for target in linux/amd64 darwin/arm64; do
+            GOOS="${target%/*}" GOARCH="${target#*/}" CGO_ENABLED=0 \
+              go build -trimpath -ldflags "-s -w -X main.version=$VER" \
+              -o "dist/terraform-provider-unifi_v$VER" .
+            (cd dist && zip -q "terraform-provider-unifi_${VER}_${target%/*}_${target#*/}.zip" "terraform-provider-unifi_v$VER" && rm "terraform-provider-unifi_v$VER")
+          done
+          (cd dist && sha256sum *.zip > "terraform-provider-unifi_${VER}_SHA256SUMS")
+          ls -la dist
+
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --title "$GITHUB_REF_NAME" \
+            --notes "Fork build: serialize empty native_networkconf_id on device port overrides (api.err.NativeVlanCannotBeExcluded fix). Based on upstream v0.55.0 + go-unifi bc63776."
