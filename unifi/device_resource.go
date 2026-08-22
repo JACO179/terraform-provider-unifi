@@ -196,6 +196,7 @@ type portOverrideModel struct {
 	StpBpduGuardEnabled        types.Bool           `tfsdk:"stp_bpdu_guard_enabled"`
 	StpEdgeState               types.String         `tfsdk:"stp_edge_state"`
 	StpUplink                  types.Bool           `tfsdk:"stp_uplink"`
+	LagIdx                     types.Int64          `tfsdk:"lag_idx"`
 	StpPortMode                types.Bool           `tfsdk:"stp_port_mode"`
 	TaggedNetworkIDs           types.List           `tfsdk:"tagged_networkconf_ids"`
 	TaggedVLANMgmt             types.String         `tfsdk:"tagged_vlan_mgmt"`
@@ -983,6 +984,11 @@ func (r *deviceResource) Schema(
 							Description: "STP uplink designation (jfb fork).",
 							Optional:    true,
 							Computed:    true,
+						},
+						"lag_idx": schema.Int64Attribute{
+							MarkdownDescription: "Console-assigned link-aggregation index (aggregate ports). Read-mostly; kept in sync so whole-table PUTs don't drop it (jfb.8).",
+							Optional:            true,
+							Computed:            true,
 						},
 						"stp_port_mode": schema.BoolAttribute{
 							Description: "STP port mode.",
@@ -2523,6 +2529,7 @@ func (r *deviceResource) portOverridesToFramework(
 		if po.StpBpduGuardEnabled == nil { model.StpBpduGuardEnabled = types.BoolNull() } else { model.StpBpduGuardEnabled = types.BoolValue(*po.StpBpduGuardEnabled) }
 		if po.StpEdgeState == nil { model.StpEdgeState = types.StringNull() } else { model.StpEdgeState = types.StringValue(*po.StpEdgeState) }
 		if po.StpUplink == nil { model.StpUplink = types.BoolNull() } else { model.StpUplink = types.BoolValue(*po.StpUplink) }
+		if po.LagIdx == nil { model.LagIdx = types.Int64Null() } else { model.LagIdx = types.Int64Value(int64(*po.LagIdx)) }
 		model.StpPortMode = types.BoolValue(po.StpPortMode)
 
 		// Int64 attributes
@@ -2731,11 +2738,13 @@ func (r *deviceResource) frameworkToPortOverrides(
 			// jfb fork: pointer-typed newer console fields — sent only when configured
 			if !model.EeeEnabled.IsNull() { v := model.EeeEnabled.ValueBool(); po.EeeEnabled = &v }
 			if !model.LinkDebounceAuto.IsNull() { v := model.LinkDebounceAuto.ValueBool(); po.LinkDebounceAuto = &v }
-			if !model.MulticastRouterMode.IsNull() { v := model.MulticastRouterMode.ValueString(); po.MulticastRouterMode = &v }
+			// jfb.8: never serialize an empty enum — the console rejects "" with api.err.InvalidPayload
+			if !model.MulticastRouterMode.IsNull() && model.MulticastRouterMode.ValueString() != "" { v := model.MulticastRouterMode.ValueString(); po.MulticastRouterMode = &v }
 			if !model.SdWanUnderlayPort.IsNull() { v := model.SdWanUnderlayPort.ValueBool(); po.SdWanUnderlayPort = &v }
 			if !model.StpBpduGuardEnabled.IsNull() { v := model.StpBpduGuardEnabled.ValueBool(); po.StpBpduGuardEnabled = &v }
-			if !model.StpEdgeState.IsNull() { v := model.StpEdgeState.ValueString(); po.StpEdgeState = &v }
+			if !model.StpEdgeState.IsNull() && model.StpEdgeState.ValueString() != "" { v := model.StpEdgeState.ValueString(); po.StpEdgeState = &v }
 			if !model.StpUplink.IsNull() { v := model.StpUplink.ValueBool(); po.StpUplink = &v }
+			if !model.LagIdx.IsNull() && !model.LagIdx.IsUnknown() { v := int(model.LagIdx.ValueInt64()); po.LagIdx = &v }
 
 			// Int64 attributes
 			if !model.Dot1XIDleTimeout.IsNull() {
@@ -2949,6 +2958,7 @@ func portOverrideAttrTypes() map[string]attr.Type {
 		"stp_bpdu_guard_enabled":           types.BoolType,
 		"stp_edge_state":                   types.StringType,
 		"stp_uplink":                       types.BoolType,
+		"lag_idx":                          types.Int64Type,
 		"stormctrl_ucast_level":            types.Int64Type,
 		"stormctrl_ucast_rate":             types.Int64Type,
 		"stp_port_mode":                    types.BoolType,

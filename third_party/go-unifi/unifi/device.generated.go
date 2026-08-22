@@ -473,6 +473,7 @@ type DevicePortOverrides struct {
 	StpBpduGuardEnabled          *bool             `json:"stp_bpdu_guard_enabled,omitempty"`  // jfb fork
 	StpEdgeState                 *string           `json:"stp_edge_state,omitempty"`          // jfb fork
 	StpUplink                    *bool             `json:"stp_uplink,omitempty"`              // jfb fork
+	LagIdx                       *int              `json:"lag_idx,omitempty"`                 // jfb fork (jfb.8): aggregate ports carry a console-assigned lag index that must round-trip
 	Name                         string            `json:"name,omitempty"`     // .{0,128}
 	OpMode                       string            `json:"op_mode,omitempty"`  // switch|mirror|aggregate
 	PoeMode                      string            `json:"poe_mode,omitempty"` // auto|pasv24|passthrough|off

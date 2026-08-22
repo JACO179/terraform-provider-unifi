@@ -560,7 +560,12 @@ func (r *networkResource) Schema(
 				MarkdownDescription: "Specifies whether this network uses a third-party gateway. When enabled, the network purpose is set to `vlan-only` and only VLAN ID, DHCP guarding, and basic network settings are configured.",
 				Optional:            true,
 				Computed:            true,
-				Default:             booldefault.StaticBool(false),
+				// jfb.8: no static false default — the controller derives this
+				// from the purpose (vlan-only => true), so a known-false plan
+				// made every vlan-only create fail with an inconsistent result.
+				PlanModifiers: []planmodifier.Bool{
+					thirdPartyGatewayFromPurpose{},
+				},
 			},
 			"purpose": schema.StringAttribute{
 				MarkdownDescription: "The network purpose: `corporate` (default), `guest`, or `vlan-only`. Leave unset to let the controller manage it (a `third_party_gateway` network is always `vlan-only`). **Note:** on Zone-Based-Firewall controllers the purpose is coupled to the firewall zone — a `guest` network only keeps `purpose = \"guest\"` while it belongs to the guest/Hotspot zone (assign it there via `unifi_firewall_zone`), otherwise the controller rewrites it back to `corporate` and the apply fails with an inconsistent-result error.",
@@ -2107,4 +2112,37 @@ func (r *networkResource) List(
 			}
 		}
 	}
+}
+
+
+// thirdPartyGatewayFromPurpose derives third_party_gateway when the config
+// leaves it null: purpose "vlan-only" (known) => true, another known purpose
+// => false, otherwise unknown until the controller answers. jfb fork (jfb.8).
+type thirdPartyGatewayFromPurpose struct{}
+
+func (m thirdPartyGatewayFromPurpose) Description(_ context.Context) string {
+	return "derive third_party_gateway from purpose when unset"
+}
+
+func (m thirdPartyGatewayFromPurpose) MarkdownDescription(ctx context.Context) string {
+	return m.Description(ctx)
+}
+
+func (m thirdPartyGatewayFromPurpose) PlanModifyBool(ctx context.Context, req planmodifier.BoolRequest, resp *planmodifier.BoolResponse) {
+	if !req.ConfigValue.IsNull() {
+		resp.PlanValue = req.ConfigValue
+		return
+	}
+	var purpose types.String
+	diags := req.Plan.GetAttribute(ctx, path.Root("purpose"), &purpose)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	if !purpose.IsNull() && !purpose.IsUnknown() {
+		resp.PlanValue = types.BoolValue(purpose.ValueString() == "vlan-only")
+		return
+	}
+	// unknown purpose: let the controller decide
+	resp.PlanValue = types.BoolUnknown()
 }
